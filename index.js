@@ -30,7 +30,7 @@ let initialisation = async () => {
         else req.continue();
     });
     await page.goto('https://netflix.com');
-    let countryCode = await page.url().slice(-8, -6);
+    let countryCode = await page.url().slice(-3, -1);
     if (countryCodes.includes(countryCode)) country_code = countryCode;
     else country_code = "us"
     await page.on('close', async () => {
@@ -108,23 +108,23 @@ app.post("/profiles", browserCheck, loginCheck, async (req, res) => {
     try {
         await page.goto("https://www.netflix.com/YourAccount", { waitUntil: 'domcontentloaded' });
         let plan_name = await page.$eval('div[data-uia="plan-label"] > b', element => element.innerText);
-        let { profileCount, profilesDataArray } = await page.evaluate(async () => {
+        let { profileCount, profiles_data } = await page.evaluate(async () => {
             let profilesNode = await document.querySelector("div.profile-hub > ul")
             let profileCount = await profilesNode.childElementCount
             let childNodes = await profilesNode.childNodes
-            let profilesDataArray = await [...childNodes].map((element, index) => {
+            let profiles_data = await [...childNodes].map((element, index) => {
                 let profile_name = element.querySelector("div.profile-header > div.profile-summary > h3").innerText
                 let profile_code = element.getAttribute("data-uia")
                 let profile_lock = element.querySelector("ul.profile-links > li > a[data-uia='action-profile-lock'] > .profile-main").innerText.replace("Profile Lock", "")
                 let profile_token = element.querySelector("ul.profile-links > li > a[data-uia='action-profile-lock']").getAttribute("href").replace("/settings/lock/", "")
                 return { id: ++index, profile_name, profile_code, profile_lock, profile_token }
             })
-            return { profileCount, profilesDataArray }
+            return { profileCount, profiles_data }
         })
         let profiles_count = await profileCount
-        profiles_data = await profilesDataArray.map((element, index) => {
-            return (profiles_data != undefined) ? Object.assign(profiles_data[index], element) : element
-        })
+        // profiles_data = await profilesDataArray.map((element,index)=>{
+        //     return (profiles_data != undefined) ? Object.assign(profiles_data[index], element) : element
+        // })
         await res.status(200).json(generateResponse(1, "Profile Details", { plan_name, profiles_count, profiles_data }))
     }
     catch (e) {
@@ -147,9 +147,10 @@ app.post("/checkPin", browserCheck, loginCheck, async (req, res) => {
     }
 })
 
-app.post("/lockProfile", browserCheck, loginCheck, profileCheck, async (req, res) => {
+//app.post("/lockProfile", browserCheck, loginCheck, profileCheck, async (req,res) => {
+app.post("/lockProfile", browserCheck, loginCheck, async (req, res) => {
     try {
-        let profileObj = profiles_data.find(profile => profile.profile_token == req.body.profile_token)
+        //let profileObj = profiles_data.find(profile => profile.profile_token == req.body.profile_token)
         await page.goto(`https://www.netflix.com/settings/lock/${req.body.profile_token}`, { waitUntil: 'domcontentloaded' });
         await page.type("#input-account-content-restrictions", req.body.password, { delay: 10 })
         await page.click("button[data-uia='btn-account-pin-submit']", { waitUntil: 'domcontentloaded' });
@@ -169,43 +170,42 @@ app.post("/lockProfile", browserCheck, loginCheck, profileCheck, async (req, res
         await page.waitForNavigation()
         let pageUrl = await page.url()
         if (await pageUrl == "https://www.netflix.com/YourAccount?message=lock.confirm&messageType=success") {
-            profiles_data[profileObj.id].profile_lock = "On"
+            //profiles_data[profileObj.id].profile_lock = "On"
             await res.status(200).json(generateResponse(1, "Profile locked.", { profile_lock: true }))
         }
-        else if (profileObj.profile_lock == "On")
-            await res.status(200).json(generateResponse(1, "Profile locked.", { profile_lock: true }))
+        // else if(profileObj.profile_lock == "On")
+        //     await res.status(200).json(generateResponse(1, "Profile locked.", {profile_lock : true}))
         else
             await res.status(200).json(generateResponse(1, "Profile not locked.", { profile_lock: false }))
-
     }
     catch (e) {
         res.status(500).json(generateResponse(0, "Something went wrong", e.message))
     }
 })
 
-app.post("/unlockProfile", browserCheck, loginCheck, profileCheck, async (req, res) => {
+//app.post("/unlockProfile", browserCheck, loginCheck, profileCheck, async (req,res) => {
+app.post("/unlockProfile", browserCheck, loginCheck, async (req, res) => {
     try {
-        let profileObj = profiles_data.find(profile => profile.profile_token == req.body.profile_token)
-        console.log()
-        if (profileObj.profile_lock == "Off") {
-            await res.json({ profile_unlock: true })
+        // let profileObj = profiles_data.find(profile => profile.profile_token == req.body.profile_token)
+        // if(profileObj.profile_lock == "Off"){
+        //     await res.json({profile_unlock : true})
+        // }
+        // else{
+        await page.goto(`https://www.netflix.com/settings/lock/${req.body.profile_token}`, { waitUntil: 'domcontentloaded' });
+        await page.type("#input-account-content-restrictions", req.body.password, { delay: 10 })
+        await page.click("button[data-uia='btn-account-pin-submit']", { waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('.ui-binary-input > #bxid_lock-profile_true', { visible: true, });
+        await page.$eval('#bxid_lock-profile_true', element => element.click());
+        await page.click("button[data-uia='btn-account-pin-submit']", { waitUntil: 'domcontentloaded' });
+        await page.waitForNavigation()
+        let pageUrl = await page.url()
+        if (await pageUrl == "https://www.netflix.com/YourAccount?message=lock.confirm&messageType=success") {
+            //profiles_data[profileObj.id].profile_lock = "Off"
+            await res.status(200).json(generateResponse(1, "Profile unlocked.", { profile_unlock: true }))
         }
-        else {
-            await page.goto(`https://www.netflix.com/settings/lock/${req.body.profile_token}`, { waitUntil: 'domcontentloaded' });
-            await page.type("#input-account-content-restrictions", req.body.password, { delay: 10 })
-            await page.click("button[data-uia='btn-account-pin-submit']", { waitUntil: 'domcontentloaded' });
-            await page.waitForSelector('.ui-binary-input > #bxid_lock-profile_true', { visible: true, });
-            await page.$eval('#bxid_lock-profile_true', element => element.click());
-            await page.click("button[data-uia='btn-account-pin-submit']", { waitUntil: 'domcontentloaded' });
-            await page.waitForNavigation()
-            let pageUrl = await page.url()
-            if (await pageUrl == "https://www.netflix.com/YourAccount?message=lock.confirm&messageType=success") {
-                profiles_data[profileObj.id].profile_lock = "Off"
-                await res.status(200).json(generateResponse(1, "Profile unlocked.", { profile_unlock: true }))
-            }
-            else
-                await res.status(200).json(generateResponse(1, "Profile not unlocked.", { profile_unlock: false }))
-        }
+        else
+            await res.status(200).json(generateResponse(1, "Profile not unlocked.", { profile_unlock: false }))
+        //}
     }
     catch (e) {
         res.status(500).json(generateResponse(0, "Something went wrong", e.message))
@@ -214,6 +214,7 @@ app.post("/unlockProfile", browserCheck, loginCheck, profileCheck, async (req, r
 
 app.post("/createProfile", browserCheck, loginCheck, async (req, res) => {
     try {
+        let profile = {}
         await page.goto('https://www.netflix.com/profiles/manage', { waitUntil: 'domcontentloaded' });
         let profileNames = await page.$$eval('li.profile', profileNodes => { return profileNodes.map(element => element.querySelector("span.profile-name").innerText) })
         if (await page.$('.addProfileIcon') !== null) {
@@ -241,19 +242,17 @@ app.post("/createProfile", browserCheck, loginCheck, async (req, res) => {
                 await page.goto('https://www.netflix.com/ProfilesGate', { waitUntil: 'domcontentloaded' });
                 let profiles = await page.$$('.choose-profile > li.profile')
                 if (profileNames.length < profiles.length) {
-                    let profile = await page.$eval(`li.profile:nth-of-type(${profiles.length})`, element => {
-                        let profile_name = element.querySelector("a.profile-link > span.profile-name").innerText
-                        let profile_token = element.querySelector("a.profile-link").getAttribute("href").replace("/SwitchProfile?tkn=", "")
-                        return { profile_name, profile_token }
-                    })
-                    profile.id = await profiles.length - 1;
+                    profile.id = await profiles.length;
                     profile.isCreated = await isCreated
-                    await res.status(200).json(generateResponse(1, "Profile created successfully.", { profile }))
+                    profile.profile_token = await page.$eval(`li.profile:nth-of-type(${profiles.length})`, element => {
+                        return element.querySelector("a.profile-link").getAttribute("href").replace("/SwitchProfile?tkn=", "")
+                    })
+                    await res.status(200).json(generateResponse(1, "Profile created successfully.", profile))
                 }
             }
         }
         else {
-            await res.status(200).json(generateResponse(1, "Profiles exceeded.", { profile }))
+            await res.status(200).json(generateResponse(1, "Profiles exceeded.", profile))
         }
     }
     catch (e) {
@@ -263,10 +262,13 @@ app.post("/createProfile", browserCheck, loginCheck, async (req, res) => {
 
 app.post("/renameProfile", browserCheck, loginCheck, async (req, res) => {
     try {
+        await page.goto("https://www.netflix.com/YourAccount", { waitUntil: 'domcontentloaded' });
+        let profileTokens = await page.$$eval('div.profile-hub > ul > li.single-profile', profileNodes => Array.from(profileNodes).map(element => element.querySelector("ul.profile-links > li.account-section-item > a[data-uia='action-profile-lock']").getAttribute("href").replace("/settings/lock/", "")))
+        let profileIndex = await profileTokens.indexOf(req.body.profile_token) + 1
         await page.goto('https://www.netflix.com/profiles/manage', { waitUntil: 'domcontentloaded' });
         let profileNames = await page.$$eval('li.profile', profileNodes => { return profileNodes.map(element => element.querySelector("span.profile-name").innerText) })
-        if (profileNames.length > req.body.profile_id) {
-            await page.click(`li.profile:nth-of-type(${parseInt(req.body.profile_id) + 1})`)
+        if (profileNames.length > profileIndex) {
+            await page.click(`li.profile:nth-of-type(${parseInt(profileIndex)})`)
             await page.waitForSelector('.profile-actions-container', { visible: true, });
             await page.$eval('.profile-edit-inputs > input', el => el.value = '');
             await page.type(".profile-edit-inputs > input", req.body.profile_name, { delay: 10 })
@@ -275,7 +277,7 @@ app.post("/renameProfile", browserCheck, loginCheck, async (req, res) => {
             await page.waitForSelector('.choose-profile', { visible: true, });
             await page.goto('https://www.netflix.com/ProfilesGate', { waitUntil: 'domcontentloaded' });
             await page.waitForSelector('a.profile-link', { visible: true, });
-            let profile_name = await page.$eval(`li.profile:nth-of-type(${parseInt(req.body.profile_id) + 1})`, element => element.querySelector("a.profile-link > span.profile-name").innerText)
+            let profile_name = await page.$eval(`li.profile:nth-of-type(${parseInt(profileIndex)})`, element => element.querySelector("a.profile-link > span.profile-name").innerText)
             let isRenamed = false;
             if (profile_name == req.body.profile_name) {
                 isRenamed = true;
@@ -283,7 +285,7 @@ app.post("/renameProfile", browserCheck, loginCheck, async (req, res) => {
             await res.status(200).json(generateResponse(1, "Profile renamed.", { isRenamed }))
         }
         else {
-            await res.status(200).json(generateResponse(1, "Profile not found or Invalid profile Id.", { isRenamed }))
+            await res.status(200).json(generateResponse(1, "Profile not found or Invalid profile token.", { isRenamed }))
         }
     }
     catch (e) {
@@ -293,19 +295,18 @@ app.post("/renameProfile", browserCheck, loginCheck, async (req, res) => {
 
 app.post("/deleteProfile", browserCheck, loginCheck, async (req, res) => {
     try {
+        await page.goto("https://www.netflix.com/YourAccount", { waitUntil: 'domcontentloaded' });
+        let profileTokens = await page.$$eval('div.profile-hub > ul > li.single-profile', profileNodes => Array.from(profileNodes).map(element => element.querySelector("ul.profile-links > li.account-section-item > a[data-uia='action-profile-lock']").getAttribute("href").replace("/settings/lock/", "")))
+        let profileIndex = await profileTokens.indexOf(req.body.profile_token) + 1
         await page.goto('https://www.netflix.com/profiles/manage', { waitUntil: 'domcontentloaded' });
         let profileNames = await page.$$eval('li.profile', profileNodes => { return profileNodes.map(element => element.querySelector("span.profile-name").innerText) })
-        if (profileNames.length >= req.body.profile_id && req.body.profile_id > 0) {
-            let profile = await page.$eval(`li.profile:nth-of-type(${parseInt(req.body.profile_id)})`, (element, profile_id) => {
-                let id = parseInt(profile_id);
-                let profile_name = element.querySelector("span.profile-name").innerText
-                return { id, profile_name }
-            }, req.body.profile_id)
-            await page.click(`li.profile:nth-of-type(${parseInt(req.body.profile_id)})`)
+        let isDeleted = false
+        if ((profileNames.length >= profileIndex) && (profileIndex > 1)) {
+            await page.click(`li.profile:nth-of-type(${parseInt(profileIndex)})`)
             await page.waitForSelector("span[data-uia='profile-delete-button']", { visible: true, });
             await page.click("span[data-uia='profile-delete-button'] > span")
             await page.waitForSelector('.profile-button', { visible: true, });
-            let isDeleted = await page.evaluate(async () => {
+            isDeleted = await page.evaluate(async () => {
                 let nodes = await document.querySelectorAll('span.profile-button')
                 let deleteAction = false;
                 Array.from(nodes).forEach((elem) => {
@@ -326,7 +327,7 @@ app.post("/deleteProfile", browserCheck, loginCheck, async (req, res) => {
             }
         }
         else {
-            await res.status(200).json(generateResponse(1, "Profile not found or Invalid profile Id.", { isDeleted }))
+            await res.status(200).json(generateResponse(1, "Profile not found or Invalid profile token.", { isDeleted }))
         }
     }
     catch (e) {
@@ -371,25 +372,25 @@ async function loginCheck(req, res, next) {
     }
 }
 
-async function profileCheck(req, res, next) {
-    await page.goto("https://www.netflix.com/YourAccount", { waitUntil: 'domcontentloaded' });
-    let { profilesDataArray } = await page.evaluate(async () => {
-        let profilesNode = await document.querySelector("div.profile-hub > ul")
-        let childNodes = await profilesNode.childNodes
-        let profilesDataArray = await [...childNodes].map((element, index) => {
-            let profile_name = element.querySelector("div.profile-header > div.profile-summary > h3").innerText
-            let profile_code = element.getAttribute("data-uia")
-            let profile_lock = element.querySelector("ul.profile-links > li > a[data-uia='action-profile-lock'] > .profile-main").innerText.replace("Profile Lock", "")
-            let profile_token = element.querySelector("ul.profile-links > li > a[data-uia='action-profile-lock']").getAttribute("href").replace("/settings/lock/", "")
-            return { id: index, profile_name, profile_code, profile_lock, profile_token }
-        })
-        return { profilesDataArray }
-    })
-    profiles_data = await profilesDataArray.map((element, index) => {
-        return (profiles_data != undefined) ? Object.assign(profiles_data[index], element) : element
-    })
-    next()
-}
+// async function profileCheck(req, res, next){
+//     await page.goto("https://www.netflix.com/YourAccount", {waitUntil: 'domcontentloaded'});
+//     let {profilesDataArray} = await page.evaluate(async () => {
+//         let profilesNode = await document.querySelector("div.profile-hub > ul")
+//         let childNodes = await profilesNode.childNodes
+//         let profilesDataArray = await [...childNodes].map((element,index) => {
+//             let profile_name = element.querySelector("div.profile-header > div.profile-summary > h3").innerText
+//             let profile_code = element.getAttribute("data-uia")
+//             let profile_lock = element.querySelector("ul.profile-links > li > a[data-uia='action-profile-lock'] > .profile-main").innerText.replace("Profile Lock","")
+//             let profile_token = element.querySelector("ul.profile-links > li > a[data-uia='action-profile-lock']").getAttribute("href").replace("/settings/lock/","")
+//             return {id:index,profile_name,profile_code,profile_lock,profile_token}
+//         })
+//         return {profilesDataArray}
+//     })
+//     profiles_data = await profilesDataArray.map((element,index)=>{
+//         return (profiles_data != undefined) ? Object.assign(profiles_data[index], element) : element
+//     })
+//     next()
+// }
 
 function generateResponse(status, message, data) {
     return {
