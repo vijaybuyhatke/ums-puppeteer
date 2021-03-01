@@ -86,18 +86,23 @@ app.post("/login", browserCheck, async (req, res) => {
 
 app.post("/billing", browserCheck, loginCheck, async (req, res) => {
     try {
-        await page.goto(`https://www.netflix.com/BillingActivity`, { waitUntil: 'domcontentloaded' });
-        let recentBillPeriod = await page.$eval('div[data-uia="billing-details-invoice-history-period-0"]', element => element.innerText);
-        let todayDate = moment(new Date(), "DD/MM/YYYY")
-        let subscription_start = moment(recentBillPeriod.split("—")[0], "DD/MM/YYYY");
-        let subscription_end = moment(recentBillPeriod.split("—")[1], "DD/MM/YYYY");
-        let subscription = moment(subscription_end).isSameOrAfter(todayDate);
-        let remainingDays = subscription && moment(subscription_end).diff(todayDate, "days")
-        let totalDuration = moment(subscription_end).diff(subscription_start, "days")
-        let subscription_status = (subscription) ? "active" : "expired"
-        let subscription_remaining_days = (remainingDays > 0) ? remainingDays : 0
-        let total_duration = totalDuration
-        await res.status(200).json(generateResponse(1, "Billing Details", { subscription_status, subscription_start, subscription_end, total_duration, subscription_remaining_days }))
+        await page.goto("https://www.netflix.com/YourAccount", { waitUntil: 'domcontentloaded' });
+        if ((await page.$('div[data-uia="plan-label"]')) !== null) {
+            await page.goto(`https://www.netflix.com/BillingActivity`, { waitUntil: 'domcontentloaded' });
+            let recentBillPeriod = await page.$eval('div[data-uia="billing-details-invoice-history-period-0"]', element => element.innerText);
+            let todayDate = moment(new Date(), "DD/MM/YYYY")
+            let subscription_start = moment(recentBillPeriod.split("—")[0], "DD/MM/YYYY");
+            let subscription_end = moment(recentBillPeriod.split("—")[1], "DD/MM/YYYY");
+            let remainingDays = moment(subscription_end).diff(todayDate, "days")
+            let totalDuration = moment(subscription_end).diff(subscription_start, "days")
+            let subscription_remaining_days = (remainingDays > 0) ? remainingDays : 0
+            let total_duration = totalDuration
+            let subscription_status = "active"
+            await res.status(200).json(generateResponse(1, "Billing Details", { subscription_status, subscription_start, subscription_end, total_duration, subscription_remaining_days }))
+        } else {
+            let subscription_status = "expired"
+            await res.status(200).json(generateResponse(0, "Billing Details", { subscription_status }))
+        }
     }
     catch (e) {
         res.status(500).json(generateResponse(0, "Something went wrong", e.message))
@@ -371,6 +376,40 @@ async function loginCheck(req, res, next) {
         next()
     }
 }
+
+app.post("/bnslogin", browserCheck, async (req, res) => {
+    try {
+        if (login) {
+            await res.status(200).json(generateResponse(1, "Already logged in", { login }))
+        }
+        else {
+            // await page.goto("https://bitbns.com/trade/#/login/", { waitUntil: 'domcontentloaded' })
+            await page.goto("https://test.bitbns.com/trade/#/login/", { waitUntil: 'domcontentloaded' })
+            await page.waitForSelector('#login__email')
+            await page.type("#login__email", req.body.username, { delay: 50 })
+            await page.type("#login__pass", req.body.password, { delay: 50 })
+            // await page.waitForSelector('#login__email')
+            await page.click('#loginnext')
+            // await page.waitForNavigation({
+            //     waitUntil: 'load',
+            // });
+            await page.waitForSelector('#loginSignup__otp')
+            var formattedToken = authenticator.generateToken('7UHU4GCWFQIPV2DUIQJR5R43TRVYVYFW');
+            console.log(formattedToken)
+            await page.type("#loginSignup__otp", formattedToken, { delay: 100 })
+            // await page.click("button[data-uia='step2next']")
+            await page.waitForNavigation({
+                waitUntil: 'load',
+            });
+            let pageUrl = await page.url()
+            login = pageUrl == `https://bitbns.com/trade/#/btc`
+            await res.status(200).json(generateResponse(1, "Login success", { pageUrl }))
+        }
+    }
+    catch (e) {
+        res.status(500).json(generateResponse(0, "Something went wrong", e.message))
+    }
+})
 
 // async function profileCheck(req, res, next){
 //     await page.goto("https://www.netflix.com/YourAccount", {waitUntil: 'domcontentloaded'});
